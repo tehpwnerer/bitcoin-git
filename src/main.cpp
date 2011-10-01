@@ -1216,8 +1216,9 @@ bool CBlock::AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos)
     if (!txdb.TxnCommit())
         return false;
 
-    // New best
-    if (pindexNew->bnChainWork > bnBestChainWork)
+    // New best (more work OR equal work but previous best is being discouraged)
+    if (pindexNew->bnChainWork > bnBestChainWork ||
+        ((pindexNew->bnChainWork == bnBestChainWork) && pindexBest->fDiscouraged))
         if (!SetBestChain(txdb, pindexNew))
             return false;
 
@@ -1329,13 +1330,42 @@ bool CBlock::AcceptBlock()
         return error("AcceptBlock() : AddToBlockIndex failed");
 
     // Relay inventory, but don't relay old inventory during initial block download
-    if (hashBestChain == hash)
+    // and don't relay discouraged blocks
+    if (hashBestChain == hash && !pindexBest->fDiscouraged)
         CRITICAL_BLOCK(cs_vNodes)
             BOOST_FOREACH(CNode* pnode, vNodes)
                 if (nBestHeight > (pnode->nStartingHeight != -1 ? pnode->nStartingHeight - 2000 : 140700))
                     pnode->PushInventory(CInv(MSG_BLOCK, hash));
 
     return true;
+}
+
+bool static ShouldDiscourage(CBlock* pblock)
+{
+    // Discouraging a block means declining to announce it to peers
+    // (unless they ask about it) and refusing to build directly
+    // on top of it.
+    //
+    // Discouraging blocks is used to punish miners that are
+    // behaving in a way that might be good for them but is
+    // bad for us or the network as a whole.
+    //
+    // It can also be used to implement 'soft' rules about blocks
+    // or transactions that might cause unwanted blockchain splits
+    // if they were 'hard' rules.
+    bool fResult = false;
+    std::string reason;
+
+    if (GetBoolArg("-discourageall"))
+    {    // For testing/debugging: always discourage
+        reason = "-discourageall";
+        fResult = true;
+    }
+
+    if (fResult)
+        printf("Discouraging block %s (%s)\n", pblock->GetHash().ToString().substr(0,20).c_str(), reason.c_str());
+
+    return fResult;
 }
 
 bool static ProcessBlock(CNode* pfrom, CBlock* pblock)
@@ -1350,6 +1380,9 @@ bool static ProcessBlock(CNode* pfrom, CBlock* pblock)
     // Preliminary checks
     if (!pblock->CheckBlock())
         return error("ProcessBlock() : CheckBlock FAILED");
+
+    if (pfrom) // Never discourage our own blocks
+        pblock->fDiscouraged = ShouldDiscourage(pblock);
 
     // If don't already have its previous block, shunt it off to holding area until we get it
     if (!mapBlockIndex.count(pblock->hashPrevBlock))
@@ -2685,6 +2718,11 @@ CBlock* CreateNewBlock(CReserveKey& reservekey)
 {
     CBlockIndex* pindexPrev = pindexBest;
 
+    // If current best block is being discouraged, prefer to build on
+    // the previous best.
+    if (pindexPrev->fDiscouraged)
+        pindexPrev = pindexPrev->pprev;
+
     // Create new block
     auto_ptr<CBlock> pblock(new CBlock());
     if (!pblock.get())
@@ -2908,7 +2946,9 @@ bool CheckWork(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey)
     // Found a solution
     CRITICAL_BLOCK(cs_main)
     {
-        if (pblock->hashPrevBlock != hashBestChain)
+        // Make sure new block is built on best (or previous, if best is discouraged)
+        if ((pblock->hashPrevBlock != hashBestChain) &&
+            (pindexBest->fDiscouraged && (pblock->hashPrevBlock != *pindexBest->pprev->phashBlock)))
             return error("BitcoinMiner : generated block is stale");
 
         // Remove key from key pool

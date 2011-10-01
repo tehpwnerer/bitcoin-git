@@ -25,7 +25,6 @@ class CAddress;
 class CInv;
 class CRequestTracker;
 class CNode;
-class CBlockIndex;
 
 static const unsigned int MAX_BLOCK_SIZE = 1000000;
 static const unsigned int MAX_BLOCK_SIZE_GEN = MAX_BLOCK_SIZE/2;
@@ -791,6 +790,9 @@ public:
     // memory only
     mutable std::vector<uint256> vMerkleTree;
 
+    // Discouraging (preferring not to relay or build on)
+    bool fDiscouraged;
+
     // Denial-of-service detection:
     mutable int nDoS;
     bool DoS(int nDoSIn, bool fIn) const { nDoS += nDoSIn; return fIn; }
@@ -828,6 +830,7 @@ public:
         vtx.clear();
         vMerkleTree.clear();
         nDoS = 0;
+        fDiscouraged = false;
     }
 
     bool IsNull() const
@@ -1020,6 +1023,7 @@ public:
     unsigned int nBits;
     unsigned int nNonce;
 
+    bool fDiscouraged;
 
     CBlockIndex()
     {
@@ -1036,6 +1040,8 @@ public:
         nTime          = 0;
         nBits          = 0;
         nNonce         = 0;
+
+        fDiscouraged = false;
     }
 
     CBlockIndex(unsigned int nFileIn, unsigned int nBlockPosIn, CBlock& block)
@@ -1053,6 +1059,8 @@ public:
         nTime          = block.nTime;
         nBits          = block.nBits;
         nNonce         = block.nNonce;
+
+        fDiscouraged = block.fDiscouraged;
     }
 
     CBlock GetBlockHeader() const
