@@ -489,25 +489,14 @@ public:
         return (vin.size() == 1 && vin[0].prevout.IsNull());
     }
 
-    int GetSigOpCount() const
+    int GetLegacySigOpCount() const
     {
         int n = 0;
         foreach(const CTxIn& txin, vin)
-            n += txin.scriptSig.GetSigOpCount();
+            n += txin.scriptSig.GetSigOpCount(false);
         foreach(const CTxOut& txout, vout)
-            n += txout.scriptPubKey.GetSigOpCount();
+            n += txout.scriptPubKey.GetSigOpCount(false);
         return n;
-    }
-
-    bool IsStandard() const
-    {
-        foreach(const CTxIn& txin, vin)
-            if (!txin.scriptSig.IsPushOnly())
-                return error("nonstandard txin: %s", txin.scriptSig.ToString().c_str());
-        foreach(const CTxOut& txout, vout)
-            if (!::IsStandard(txout.scriptPubKey))
-                return error("nonstandard txout: %s", txout.scriptPubKey.ToString().c_str());
-        return true;
     }
 
     bool IsMine() const
@@ -571,6 +560,17 @@ public:
                 throw runtime_error("CTransaction::GetValueOut() : value out of range");
         }
         return nValueOut;
+    }
+
+    bool IsStandard() const
+    {
+        foreach(const CTxIn& txin, vin)
+            if (!txin.scriptSig.IsPushOnly())
+                return error("nonstandard txin: %s", txin.scriptSig.ToString().c_str());
+        foreach(const CTxOut& txout, vout)
+            if (!::IsStandard(txout.scriptPubKey))
+                return error("nonstandard txout: %s", txout.scriptPubKey.ToString().c_str());
+        return true;
     }
 
     int64 GetMinFee(unsigned int nBlockSize=1, bool fAllowFree=true) const
@@ -679,7 +679,7 @@ public:
     bool ReadFromDisk(COutPoint prevout);
     bool DisconnectInputs(CTxDB& txdb);
     bool ConnectInputs(CTxDB& txdb, map<uint256, CTxIndex>& mapTestPool, CDiskTxPos posThisTx,
-                       CBlockIndex* pindexBlock, int64& nFees, bool fBlock, bool fMiner, int64 nMinFee=0);
+                       CBlockIndex* pindexBlock, int64& nFees, bool fBlock, bool fMiner, int& nSigOpsRet, int64 nMinFee=0);
     bool ClientConnectInputs();
     bool CheckTransaction() const;
     bool AcceptToMemoryPool(CTxDB& txdb, bool fCheckInputs=true, bool* pfMissingInputs=NULL);
@@ -1104,14 +1104,6 @@ public:
     int64 GetBlockTime() const
     {
         return (int64)nTime;
-    }
-
-    int GetSigOpCount() const
-    {
-        int n = 0;
-        foreach(const CTransaction& tx, vtx)
-            n += tx.GetSigOpCount();
-        return n;
     }
 
 
