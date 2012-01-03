@@ -699,8 +699,8 @@ unsigned int static GetNextWorkRequired(const CBlockIndex* pindexLast, const CBl
     // Only change once per interval
     if ((pindexLast->nHeight+1) % nInterval != 0)
     {
-        // Special rules for testnet after 1 Jan 2012:
-        if (fTestNet && pblock->nTime > 1325376000)
+        // Special rules for testnet after 15 Jan 2012:
+        if (fTestNet && pblock->nTime > 1326585600)
         {
             // If the new block's timestamp is more than 2* 10 minutes
             // then allow mining of a min-difficulty block.
