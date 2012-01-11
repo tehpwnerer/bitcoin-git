@@ -6,6 +6,7 @@
 #define H_BITCOIN_SCRIPT
 
 #include "base58.h"
+#include "keystore.h"
 
 #include <string>
 #include <vector>
@@ -591,13 +592,16 @@ public:
 
 
 
+
+
+
 bool EvalScript(std::vector<std::vector<unsigned char> >& stack, const CScript& script, const CTransaction& txTo, unsigned int nIn, int nHashType);
 bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, std::vector<std::vector<unsigned char> >& vSolutionsRet);
 bool IsStandard(const CScript& scriptPubKey);
-bool IsMine(const CScript& scriptPubKey);
-bool ExtractPubKey(const CScript& scriptPubKey, bool fMineOnly, std::vector<unsigned char>& vchPubKeyRet);
+bool IsMine(const CKeyStore& keystore, const CScript& scriptPubKey);
+bool ExtractPubKey(const CScript& scriptPubKey, const CKeyStore* pkeystore, std::vector<unsigned char>& vchPubKeyRet);
 bool ExtractHash160(const CScript& scriptPubKey, uint160& hash160Ret);
-bool SignSignature(const CTransaction& txFrom, CTransaction& txTo, unsigned int nIn, int nHashType=SIGHASH_ALL);
+bool SignSignature(const CKeyStore& keystore, const CTransaction& txFrom, CTransaction& txTo, unsigned int nIn, int nHashType=SIGHASH_ALL);
 bool VerifySignature(const CTransaction& txFrom, const CTransaction& txTo, unsigned int nIn, bool fValidatePayToScriptHash, int nHashType);
 
 #endif

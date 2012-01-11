@@ -1242,7 +1242,7 @@ bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, vector<vector<unsi
 // sign SCRIPTHASH or MULTISIG transactions (but it should never need to, because the
 // wallet code to support them isn't part of the backport)
 //
-bool Solver(const CScript& scriptPubKey, uint256 hash, int nHashType,
+bool Solver(const CKeyStore& keystore, const CScript& scriptPubKey, uint256 hash, int nHashType,
             CScript& scriptSigRet, txnouttype& whichTypeRet)
 {
     scriptSigRet.clear();
@@ -1251,20 +1251,21 @@ bool Solver(const CScript& scriptPubKey, uint256 hash, int nHashType,
     if (!Solver(scriptPubKey, whichTypeRet, vSolutions))
         return false;
 
+    CRITICAL_BLOCK(keystore.cs_mapKeys)
+    {
     switch (whichTypeRet)
     {
     case TX_NONSTANDARD:
         return false;
     case TX_PUBKEY:
     {
-        // Sign
-        const valtype& vchPubKey = vSolutions[0];
-        if (!mapKeys.count(vchPubKey))
+        CPrivKey privkey;
+        if (!keystore.GetPrivKey(vSolutions[0], privkey))
             return false;
         if (hash != 0)
         {
             vector<unsigned char> vchSig;
-            if (!CKey::Sign(mapKeys[vchPubKey], hash, vchSig))
+            if (!CKey::Sign(privkey, hash, vchSig))
                 return false;
             vchSig.push_back((unsigned char)nHashType);
             scriptSigRet << vchSig;
@@ -1273,29 +1274,31 @@ bool Solver(const CScript& scriptPubKey, uint256 hash, int nHashType,
     }
     case TX_PUBKEYHASH:
     {
-        // Sign and give pubkey
+        // Sign and give pubkey                                                                                                          
         map<uint160, valtype>::iterator mi = mapPubKeys.find(uint160(vSolutions[0]));
         if (mi == mapPubKeys.end())
             return false;
         const vector<unsigned char>& vchPubKey = (*mi).second;
-        if (!mapKeys.count(vchPubKey))
+        CPrivKey privkey;
+        if (!keystore.GetPrivKey(vchPubKey, privkey))
             return false;
         if (hash != 0)
         {
             vector<unsigned char> vchSig;
-            if (!CKey::Sign(mapKeys[vchPubKey], hash, vchSig))
+            if (!CKey::Sign(privkey, hash, vchSig))
                 return false;
             vchSig.push_back((unsigned char)nHashType);
             scriptSigRet << vchSig << vchPubKey;
         }
+
         return true;
     }
-
     case TX_SCRIPTHASH:
         return false;
 
     case TX_MULTISIG:
         return false;
+    }
     }
     return false;
 }
@@ -1323,14 +1326,16 @@ bool IsStandard(const CScript& scriptPubKey)
 }
 
 
-bool IsMine(const CScript& scriptPubKey)
+bool IsMine(const CKeyStore &keystore, const CScript& scriptPubKey)
 {
     CScript scriptSig;
     txnouttype whichType;
-    return Solver(scriptPubKey, 0, 0, scriptSig, whichType);
+    return Solver(keystore, scriptPubKey, 0, 0, scriptSig, whichType);
 }
 
-bool ExtractPubKey(const CScript& scriptPubKey, bool fMineOnly, vector<unsigned char>& vchPubKeyRet)
+
+
+bool ExtractPubKey(const CScript& scriptPubKey, const CKeyStore* keystore, vector<unsigned char>& vchPubKeyRet)
 {
     vchPubKeyRet.clear();
 
@@ -1339,7 +1344,7 @@ bool ExtractPubKey(const CScript& scriptPubKey, bool fMineOnly, vector<unsigned 
     if (!Solver(scriptPubKey, whichType, vSolutions))
         return false;
 
-    CRITICAL_BLOCK(cs_mapKeys)
+    CRITICAL_BLOCK(cs_mapPubKeys)
     {
         valtype vchPubKey;
         switch (whichType)
@@ -1358,7 +1363,7 @@ bool ExtractPubKey(const CScript& scriptPubKey, bool fMineOnly, vector<unsigned 
         default:
             return false;
         }
-        if (!fMineOnly || mapKeys.count(vchPubKey))
+        if (keystore == NULL || keystore->HaveKey(vchPubKey))
         {
             vchPubKeyRet = vchPubKey;
             return true;
@@ -1423,7 +1428,7 @@ bool VerifyScript(const CScript& scriptSig, const CScript& scriptPubKey, const C
 }
 
 
-bool SignSignature(const CTransaction& txFrom, CTransaction& txTo, unsigned int nIn, int nHashType)
+bool SignSignature(const CKeyStore &keystore, const CTransaction& txFrom, CTransaction& txTo, unsigned int nIn, int nHashType)
 {
     assert(nIn < txTo.vin.size());
     CTxIn& txin = txTo.vin[nIn];
@@ -1435,7 +1440,7 @@ bool SignSignature(const CTransaction& txFrom, CTransaction& txTo, unsigned int 
     uint256 hash = SignatureHash(txout.scriptPubKey, txTo, nIn, nHashType);
 
     txnouttype whichType;
-    if (!Solver(txout.scriptPubKey, hash, nHashType, txin.scriptSig, whichType))
+    if (!Solver(keystore, txout.scriptPubKey, hash, nHashType, txin.scriptSig, whichType))
         return false;
 
     if (whichType == TX_SCRIPTHASH)
@@ -1448,7 +1453,7 @@ bool SignSignature(const CTransaction& txFrom, CTransaction& txTo, unsigned int 
         // Recompute txn hash using subscript in place of scriptPubKey:
         uint256 hash2 = SignatureHash(subscript, txTo, nIn, nHashType);
         txnouttype subType;
-        if (!Solver(subscript, hash2, nHashType, txin.scriptSig, subType))
+        if (!Solver(keystore, subscript, hash2, nHashType, txin.scriptSig, subType))
             return false;
         if (subType == TX_SCRIPTHASH)
             return false;
