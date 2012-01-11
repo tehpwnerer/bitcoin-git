@@ -1251,21 +1251,21 @@ bool Solver(const CKeyStore& keystore, const CScript& scriptPubKey, uint256 hash
     if (!Solver(scriptPubKey, whichTypeRet, vSolutions))
         return false;
 
-    CRITICAL_BLOCK(keystore.cs_mapKeys)
-    {
     switch (whichTypeRet)
     {
     case TX_NONSTANDARD:
         return false;
     case TX_PUBKEY:
     {
-        CPrivKey privkey;
-        if (!keystore.GetPrivKey(vSolutions[0], privkey))
+        CKey key;
+        if (!keystore.GetKey(Hash160(vSolutions[0]), key))
+            return false;
+        if (key.GetPubKey() != vSolutions[0])
             return false;
         if (hash != 0)
         {
             vector<unsigned char> vchSig;
-            if (!CKey::Sign(privkey, hash, vchSig))
+            if (!key.Sign(hash, vchSig))
                 return false;
             vchSig.push_back((unsigned char)nHashType);
             scriptSigRet << vchSig;
@@ -1274,23 +1274,18 @@ bool Solver(const CKeyStore& keystore, const CScript& scriptPubKey, uint256 hash
     }
     case TX_PUBKEYHASH:
     {
-        // Sign and give pubkey                                                                                                          
-        map<uint160, valtype>::iterator mi = mapPubKeys.find(uint160(vSolutions[0]));
-        if (mi == mapPubKeys.end())
-            return false;
-        const vector<unsigned char>& vchPubKey = (*mi).second;
-        CPrivKey privkey;
-        if (!keystore.GetPrivKey(vchPubKey, privkey))
+        // Sign and give pubkey
+        CKey key;
+        if (!keystore.GetKey(uint160(vSolutions[0]), key))
             return false;
         if (hash != 0)
         {
             vector<unsigned char> vchSig;
-            if (!CKey::Sign(privkey, hash, vchSig))
+            if (!key.Sign(hash, vchSig))
                 return false;
             vchSig.push_back((unsigned char)nHashType);
-            scriptSigRet << vchSig << vchPubKey;
+            scriptSigRet << vchSig << key.GetPubKey();
         }
-
         return true;
     }
     case TX_SCRIPTHASH:
@@ -1298,7 +1293,6 @@ bool Solver(const CKeyStore& keystore, const CScript& scriptPubKey, uint256 hash
 
     case TX_MULTISIG:
         return false;
-    }
     }
     return false;
 }
@@ -1333,61 +1327,34 @@ bool IsMine(const CKeyStore &keystore, const CScript& scriptPubKey)
     return Solver(keystore, scriptPubKey, 0, 0, scriptSig, whichType);
 }
 
-
-
-bool ExtractPubKey(const CScript& scriptPubKey, const CKeyStore* keystore, vector<unsigned char>& vchPubKeyRet)
+bool static ExtractAddressInner(const CScript& scriptPubKey, const CKeyStore* keystore, CBitcoinAddress& addressRet)
 {
-    vchPubKeyRet.clear();
-
     txnouttype whichType = TX_NONSTANDARD;
     vector<valtype> vSolutions;
     if (!Solver(scriptPubKey, whichType, vSolutions))
         return false;
 
-    CRITICAL_BLOCK(cs_mapPubKeys)
-    {
-        valtype vchPubKey;
-        switch (whichType)
-        {
-        case TX_PUBKEY:
-            vchPubKey = vSolutions[0];
-            break;
-        case TX_PUBKEYHASH:
-        {
-            map<uint160, valtype>::iterator mi = mapPubKeys.find(uint160(vSolutions[0]));
-            if (mi == mapPubKeys.end())
-                return false;
-            vchPubKey = (*mi).second;
-            break;
-        }
-        default:
-            return false;
-        }
-        if (keystore == NULL || keystore->HaveKey(vchPubKey))
-        {
-            vchPubKeyRet = vchPubKey;
-            return true;
-        }
-    }
+    if (whichType == TX_PUBKEY)
+        addressRet.SetPubKey(vSolutions[0]);
+    else if (whichType == TX_PUBKEYHASH)
+        addressRet.SetHash160(uint160(vSolutions[0]));
+    else
+        return false;
+    
+    if (keystore == NULL || keystore->HaveKey(addressRet))
+        return true;
+
     return false;
 }
 
 
-bool ExtractHash160(const CScript& scriptPubKey, uint160& hash160Ret)
+bool ExtractAddress(const CScript& scriptPubKey, const CKeyStore* keystore, CBitcoinAddress& addressRet)
 {
-    hash160Ret = 0;
-
-    txnouttype whichType = TX_NONSTANDARD;
-    vector<valtype> vSolutions;
-    if (!Solver(scriptPubKey, whichType, vSolutions))
-        return false;
-
-    if (whichType != TX_PUBKEY)
-        return false;
-
-    hash160Ret = uint160(vSolutions[0]);
-
-    return true;
+    if (keystore)
+        return ExtractAddressInner(scriptPubKey, keystore, addressRet);
+    else
+        return ExtractAddressInner(scriptPubKey, NULL, addressRet);
+    return false;
 }
 
 
