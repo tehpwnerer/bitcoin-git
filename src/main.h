@@ -389,6 +389,7 @@ public:
 };
 
 
+typedef std::map<uint256, std::pair<CTxIndex, CTransaction> > MapPrevTx;
 
 
 //
@@ -487,26 +488,27 @@ public:
         return (vin.size() == 1 && vin[0].prevout.IsNull());
     }
 
-    int GetSigOpCount() const
-    {
-        int n = 0;
-        BOOST_FOREACH(const CTxIn& txin, vin)
-            n += txin.scriptSig.GetSigOpCount();
-        BOOST_FOREACH(const CTxOut& txout, vout)
-            n += txout.scriptPubKey.GetSigOpCount();
-        return n;
-    }
+    /** Check for standard transaction types
+        @param[in] mapInputsMap of previous transactions that have outputs we're spending
+        @return True if all inputs (scriptSigs) use only standard transaction forms
+        @see CTransaction::FetchInputs
+    */
+    bool AreInputsStandard(const MapPrevTx& mapInputs) const;
 
-    bool IsStandard() const
-    {
-        BOOST_FOREACH(const CTxIn& txin, vin)
-            if (!txin.scriptSig.IsPushOnly())
-                return error("nonstandard txin: %s", txin.scriptSig.ToString().c_str());
-        BOOST_FOREACH(const CTxOut& txout, vout)
-            if (!::IsStandard(txout.scriptPubKey))
-                return error("nonstandard txout: %s", txout.scriptPubKey.ToString().c_str());
-        return true;
-    }
+    /** Count ECDSA signature operations the old-fashioned (pre-0.6) way
+        @return number of sigops this transaction's outputs will produce when spent
+        @see CTransaction::FetchInputs
+    */
+    int GetLegacySigOpCount() const;
+
+    /** Count ECDSA signature operations the new (0.6-and-later) way
+        This is a better measure of how expensive it is to process this transaction.
+
+        @param[in] mapInputsMap of previous transactions that have outputs we're spending
+        @return maximum number of sigops required to validate this transaction's inputs
+        @see CTransaction::FetchInputs
+    */
+    int GetSigOpCount(const MapPrevTx& mapInputs) const;
 
     int64 GetValueOut() const
     {
@@ -519,6 +521,34 @@ public:
         }
         return nValueOut;
     }
+
+    bool IsStandard() const
+    {
+        BOOST_FOREACH(const CTxIn& txin, vin)
+        {
+            // Biggest 'standard' txin is a 3-signature 3-of-3 CHECKMULTISIG
+            // pay-to-script-hash, which is 3 ~80-byte signatures, 3
+            // ~65-byte public keys, plus a few script ops.
+            if (txin.scriptSig.size() > 500)
+                return false;
+            if (!txin.scriptSig.IsPushOnly())
+                return error("nonstandard txin: %s", txin.scriptSig.ToString().c_str());
+        }
+        BOOST_FOREACH(const CTxOut& txout, vout)
+            if (!::IsStandard(txout.scriptPubKey))
+                return error("nonstandard txout: %s", txout.scriptPubKey.ToString().c_str());
+        return true;
+    }
+
+    /** Amount of bitcoins coming in to this transaction
+        Note that lightweight clients may not know anything besides the hash of previous transactions,
+        so may not be able to calculate this.
+
+        @param[in] mapInputsMap of previous transactions that have outputs we're spending
+        @returnSum of value of all inputs (scriptSigs)
+        @see CTransaction::FetchInputs
+    */
+    int64 GetValueIn(const MapPrevTx& mapInputs) const;
 
     static bool AllowFree(double dPriority)
     {
@@ -634,13 +664,39 @@ public:
     bool ReadFromDisk(CTxDB& txdb, COutPoint prevout);
     bool ReadFromDisk(COutPoint prevout);
     bool DisconnectInputs(CTxDB& txdb);
-    bool ConnectInputs(CTxDB& txdb, std::map<uint256, CTxIndex>& mapTestPool, CDiskTxPos posThisTx,
-                       CBlockIndex* pindexBlock, int64& nFees, bool fBlock, bool fMiner, int64 nMinFee=0);
+
+    /** Fetch from memory and/or disk. inputsRet keys are transaction hashes.
+
+        @param[in] txdbTransaction database
+        @param[in] mapTestPoolList of pending changes to the transaction index database
+        @param[in] fBlockTrue if being called to add a new best-block to the chain
+        @param[in] fMinerTrue if being called by CreateNewBlock
+        @param[out] inputsRetPointers to this transaction's inputs
+        @returnReturns true if all inputs are in txdb or mapTestPool
+    */
+    bool FetchInputs(CTxDB& txdb, const std::map<uint256, CTxIndex>& mapTestPool,
+                     bool fBlock, bool fMiner, MapPrevTx& inputsRet);
+
+    /** Sanity check previous transactions, then, if all checks succeed,
+        mark them as spent by this transaction.
+
+        @param[in] inputsPrevious transactions (from FetchInputs)
+        @param[out] mapTestPoolKeeps track of inputs that need to be updated on disk
+        @param[in] posThisTxPosition of this transaction on disk
+        @param[in] pindexBlock
+        @param[in] fBlocktrue if called from ConnectBlock
+        @param[in] fMinertrue if called from CreateNewBlock
+        @return Returns true if all checks succeed
+    */
+    bool ConnectInputs(MapPrevTx inputs,
+                       std::map<uint256, CTxIndex>& mapTestPool, const CDiskTxPos& posThisTx,
+                       const CBlockIndex* pindexBlock, bool fBlock, bool fMiner);
     bool ClientConnectInputs();
     bool CheckTransaction() const;
     bool AcceptToMemoryPool(CTxDB& txdb, bool fCheckInputs=true, bool* pfMissingInputs=NULL);
     bool AcceptToMemoryPool(bool fCheckInputs=true, bool* pfMissingInputs=NULL);
 protected:
+    const CTxOut& GetOutputFor(const CTxIn& input, const MapPrevTx& inputs) const;
     bool AddToMemoryPoolUnchecked();
 public:
     bool RemoveFromMemoryPool();
@@ -861,15 +917,6 @@ public:
     {
         return (int64)nTime;
     }
-
-    int GetSigOpCount() const
-    {
-        int n = 0;
-        BOOST_FOREACH(const CTransaction& tx, vtx)
-            n += tx.GetSigOpCount();
-        return n;
-    }
-
 
     uint256 BuildMerkleTree() const
     {
