@@ -75,12 +75,45 @@ TweakScriptSig(RGen& rgen, CTransaction& tx)
     int nToInsert = RExp(rgen, 1000)+1;
     CScript& scriptSig = tx.vin[whichTxIn].scriptSig;
     std::vector<unsigned char> toInsert;
-    if (R(rgen, 10) == 0)
-        toInsert = Bytes(rgen, nToInsert); // Random bytes 10% of the time
-    else
-        toInsert = OpCodes(rgen, nToInsert); // Mostly-valid opcodes the rest of the time
+    toInsert = OpCodes(rgen, nToInsert);
 
     scriptSig.insert(scriptSig.begin(), toInsert.begin(), toInsert.end());
+}
+
+// Change one bit in s:
+void
+ToggleBit(RGen& rgen, CDataStream& s)
+{
+    int byte = R(rgen, s.size());
+    unsigned char mask = 1 << R(rgen, 8);
+    s[byte] = s[byte]^mask;
+}
+
+// Change one byte in s:
+void
+ChangeByte(RGen& rgen, CDataStream& s)
+{
+    int byte = R(rgen, s.size());
+    unsigned char bits = 1+R(rgen, 255); // 1-255
+    s[byte] = s[byte]^bits;
+}
+
+// Insert n random bytes into s, at a random location:
+void
+InsertBytes(RGen& rgen, CDataStream& s, int n)
+{
+    CDataStream s2(Bytes(rgen, n));
+    int where = R(rgen, s.size());
+    s.insert(s.begin()+where, s2.begin(), s2.end());
+}
+
+// Erase n random bytes, at a random location:
+void
+EraseBytes(RGen& rgen, CDataStream& s, int n)
+{
+    if (n > s.size()) n = s.size();
+    int where = R(rgen, s.size()-n);
+    s.erase(s.begin()+where, s.begin()+where+n);
 }
 
 void
@@ -92,10 +125,21 @@ FuzzTransaction(const CTransaction& tx, const uint64_t& fuzzSeed, CDataStream& f
     CTransaction tweaked = tx;
     TweakScriptSig(rgen, tweaked);
 
-    if (R(rgen, 17) == 0)
+    // Mess with another input 10% of the time:
+    if (R(rgen, 10) == 0)
         TweakScriptSig(rgen, tweaked);
 
     fuzzedDataRet << tweaked;
+
+    // 10% chance of each of these:
+    if (R(rgen, 10) == 0)
+        ToggleBit(rgen, fuzzedDataRet);
+    if (R(rgen, 10) == 0)
+        ChangeByte(rgen, fuzzedDataRet);
+    if (R(rgen, 10) == 0)
+        InsertBytes(rgen, fuzzedDataRet, RExp(rgen, 500));
+    if (R(rgen, 10) == 0)
+        EraseBytes(rgen, fuzzedDataRet, R(rgen, fuzzedDataRet.size()));
 }
 
 void

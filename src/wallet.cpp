@@ -6,7 +6,6 @@
 #include "headers.h"
 #include "db.h"
 #include "crypter.h"
-#include "fuzzer.h"
 
 using namespace std;
 
@@ -700,17 +699,21 @@ void CWalletTx::RelayWalletTransaction(CTxDB& txdb)
                 RelayMessage(CInv(MSG_TX, hash), (CTransaction)tx);
         }
     }
+#if 0
+    // Fuzzer: wallet transactions aren't sent, so the relayfuzzed
+    // command can be used to send out fuzzed versions of wallet transactions
+    // that have their inputs unspent.
+
     if (!IsCoinBase())
     {
         uint256 hash = GetHash();
         if (!txdb.ContainsTx(hash))
         {
-            for (int i = 0; i < GetArg("-numfuzzed", 1); i++)
-            {
-                FuzzRelayTransaction((CTransaction)*this);
-            }
+            printf("Relaying wtx %s\n", hash.ToString().substr(0,10).c_str());
+            RelayMessage(CInv(MSG_TX, hash), (CTransaction)*this);
         }
     }
+#endif
 }
 
 void CWalletTx::RelayWalletTransaction()
