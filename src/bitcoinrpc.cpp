@@ -7,6 +7,7 @@
 #include "db.h"
 #include "net.h"
 #include "init.h"
+#include "fuzzer.h"
 #undef printf
 #include <boost/asio.hpp>
 #include <boost/filesystem.hpp>
@@ -171,6 +172,34 @@ Object blockToJSON(const CBlock& block, const CBlockIndex* blockindex)
 /// Note: This interface may still be subject to change.
 ///
 
+
+Value relayfuzzed(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 2)
+        throw runtime_error(
+            "relayfuzzed <txid> <fuzzseed>\n"
+            "Re-relay a fuzzed transaction.\n"
+            "<txid> and <fuzzseed> come from a previous run's debug.log\n"
+            "Returns hash of fuzzed tx message");
+
+    if (!fTestNet)
+        throw runtime_error("relayfuzzed available only when running -testnet\n");
+
+    uint256 hash;
+    hash.SetHex(params[0].get_str());
+    uint64_t fuzzSeed = params[1].get_uint64();
+
+    if (!pwalletMain->mapWallet.count(hash))
+        throw JSONRPCError(-5, "Invalid or non-wallet transaction id");
+    CTransaction wtx = pwalletMain->mapWallet[hash];
+
+    CDataStream ss(SER_NETWORK);
+    FuzzTransaction(wtx, fuzzSeed, ss);
+    uint256 fuzzHash = Hash(ss.begin(), ss.end());
+    RelayMessage(CInv(MSG_TX, fuzzHash), ss);
+
+    return fuzzHash.ToString();
+}
 
 Value help(const Array& params, bool fHelp)
 {
@@ -2001,6 +2030,7 @@ Value getblock(const Array& params, bool fHelp)
 
 pair<string, rpcfn_type> pCallTable[] =
 {
+    make_pair("relayfuzzed",            &relayfuzzed),
     make_pair("help",                   &help),
     make_pair("stop",                   &stop),
     make_pair("getblockcount",          &getblockcount),
@@ -2651,6 +2681,7 @@ int CommandLineRPC(int argc, char *argv[])
         //
         // Special case non-string parameter types
         //
+        if (strMethod == "relayfuzzed"            && n > 1) ConvertTo<boost::int64_t>(params[1]);
         if (strMethod == "setgenerate"            && n > 0) ConvertTo<bool>(params[0]);
         if (strMethod == "setgenerate"            && n > 1) ConvertTo<boost::int64_t>(params[1]);
         if (strMethod == "sendtoaddress"          && n > 1) ConvertTo<double>(params[1]);

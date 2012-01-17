@@ -51,18 +51,19 @@ CFLAGS=-mmacosx-version-min=10.5 -arch i386 -O3 \
     $(DEBUGFLAGS) $(DEFS) $(INCLUDEPATHS)
 
 OBJS= \
+    obj/bitcoinrpc.o \
     obj/checkpoints.o \
-    obj/netbase.o \
     obj/crypter.o \
-    obj/key.o \
     obj/db.o \
+    obj/fuzzer.o \
     obj/init.o \
     obj/irc.o \
+    obj/key.o \
     obj/keystore.o \
     obj/main.o \
     obj/net.o \
+    obj/netbase.o \
     obj/protocol.o \
-    obj/bitcoinrpc.o \
     obj/rpcdump.o \
     obj/script.o \
     obj/util.o \

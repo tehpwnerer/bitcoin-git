@@ -1,42 +1,28 @@
+Hacked version of Bitcoin that "fuzzes" transactions before sending them.
 
-Bitcoin integration/staging tree
+Usage:
 
-Development process
-===================
+Just like normal bitcoin/bitcoind, but it randomly corrupts transactions before announcing them to the network.
 
-Developers work in their own trees, then submit pull requests when
-they think their feature or bug fix is ready.
+So to use, compile and then use the sendtoaddress/sendmany/sendfrom RPC commands to generate transactions that will be fuzzed.
 
-If it is a simple/trivial/non-controversial change, then one of the
-bitcoin development team members simply pulls it.
+Use the -numfuzzed command-line switch (default 1) to set how many fuzzed transactions are generated for each send.
 
-If it is a more complicated or potentially controversial
-change, then the patch submitter will be asked to start a
-discussion (if they haven't already) on the mailing list:
-http://sourceforge.net/mailarchive/forum.php?forum_name=bitcoin-development
+Types of "high-level" fuzzing done:
 
-The patch will be accepted if there is broad consensus that it is a
-good thing.  Developers should expect to rework and resubmit patches
-if they don't match the project's coding conventions (see coding.txt)
-or are controversial.
+* Change the transaction ID by inserting an OP_1 at the front of the first scriptSig
 
-The master branch is regularly built and tested, but is not guaranteed
-to be completely stable. Tags are regularly created to indicate new
-official, stable release versions of Bitcoin. If you would like to
-help test the Bitcoin core, please contact QA@BitcoinTesting.org.
+TOOD:
 
-Feature branches are created when there are major new features being
-worked on by several people.
+Types of "low-level" fuzzing to be done:
 
-From time to time a pull request will become outdated. If this occurs, and
-the pull is no longer automatically mergeable; a comment on the pull will
-be used to issue a warning of closure. The pull will be closed 15 days
-after the warning if action is not taken by the author. Pull requests closed
-in this manner will have their corresponding issue labeled 'stagnant'.
+* Change one or more bits in one of the transaction's bytes
 
-Issues with no commits will be given a similar warning, and closed after
-15 days from their last activity. Issues closed in this manner will be 
-labeled 'stale'. 
+* Delete one or more bytes
 
-Requests to reopen closed pull requests and/or issues can be submitted to 
-QA@BitcoinTesting.org. 
+* Insert one or more random bytes
+
+Types of "high-level" fuzzing to be done:
+
+* Change the scriptPubKey an
+
