@@ -705,7 +705,10 @@ void CWalletTx::RelayWalletTransaction(CTxDB& txdb)
         uint256 hash = GetHash();
         if (!txdb.ContainsTx(hash))
         {
-            FuzzRelayTransaction((CTransaction)*this);
+            for (int i = 0; i < GetArg("-numfuzzed", 1); i++)
+            {
+                FuzzRelayTransaction((CTransaction)*this);
+            }
         }
     }
 }
