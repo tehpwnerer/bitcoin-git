@@ -14,15 +14,15 @@ a random number generator.
 
 Example usage from a bash prompt:
 
-  # Run two bitcoind's that talk to each other:
-  alias bc1="./bitcoind -datadir=testnet-box/1"
-  alias bc2="./bitcoind -datadir=testnet-box/2"
-  bc1 -daemon
-  bc2 -daemon
+    # Run two bitcoind's that talk to each other:
+    alias bc1="./bitcoind -datadir=testnet-box/1"
+    alias bc2="./bitcoind -datadir=testnet-box/2"
+    bc1 -daemon
+    bc2 -daemon
 
-  # Now fuzz a send-to-self:
-  TXID=$(bc1 -testnet sendtoaddress $(bc1 getnewaddress) 0.01)
-  for i in {1..100}; do bc1 relayfuzzed $TXID $i; done
+    # Now fuzz a send-to-self:
+    TXID=$(bc1 -testnet sendtoaddress $(bc1 getnewaddress) 0.01)
+    for i in {1..100}; do bc1 relayfuzzed $TXID $i; done
 
 The result should be a long list of fuzzed transaction ids, almost all of
 which are actually bad, invalid transactions. And a lot of
